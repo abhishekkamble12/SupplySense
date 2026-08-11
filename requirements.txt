@@ -1,0 +1,8 @@
+mlflow
+scikit-learn 
+langchain
+flask
+mlflow
+numpy 
+pandas
+matplotlib
