@@ -12,6 +12,7 @@ class ConfigurationManager:
         pass
 
     def get_data_ingestion_config(self) -> DataIngestionConfig:
+        # Instantiates class using the default values defined in your config_entity
         return DataIngestionConfig()
 
     def get_data_validation_config(self) -> DataValidationConfig:

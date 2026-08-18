@@ -1,8 +1,11 @@
 mlflow
-scikit-learn 
-langchain
-flask
-mlflow
-numpy 
+scikit-learn
+numpy
 pandas
 matplotlib
+dagshub
+fastapi
+uvicorn
+pydantic
+lightgbm
+pyarrow
