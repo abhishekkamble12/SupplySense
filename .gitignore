@@ -218,3 +218,14 @@ __marimo__/
 .streamlit/secrets.toml
 
 Datasets/
+artifact/
+artifacts/
+logs/
+*.csv
+*.parquet
+*.pkl
+*.npy
+*.db
+*.sqlite
+supplysense.db
+

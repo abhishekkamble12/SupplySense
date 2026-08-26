@@ -3,6 +3,9 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-2.0.0-009688.svg)](https://fastapi.tiangolo.com/)
+[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED.svg)](Dockerfile)
+[![Database](https://img.shields.io/badge/SQLAlchemy-PostgreSQL%20%7C%20SQLite-336791.svg)](src/db/models.py)
+[![Cache](https://img.shields.io/badge/Redis-Caching%20Layer-DC382D.svg)](src/db/cache.py)
 [![LightGBM](https://img.shields.io/badge/LightGBM-4.0.0-brightgreen.svg)](https://lightgbm.readthedocs.io/)
 [![MLflow](https://img.shields.io/badge/MLflow-Experiment%20Tracking-0194E2.svg)](https://mlflow.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -73,6 +76,15 @@ Translates demand predictions into business decisions:
 * **1-Click PO Approval Queue**: Vendor-consolidated draft POs with live ERP dispatch simulation.
 * **Interactive What-If Scenario Sandbox**: Real-time sliders for promotional demand surges (+0% to +150%), supplier delays (+0 to +30 days), and target fill rates.
 
+### 6. 🗄️ Relational Database Persistence & Dual-Mode Caching
+* **SQLAlchemy ORM Database**: Stores generated Purchase Orders and live SKU inventory states (`PurchaseOrderModel`, `SKUInventoryStateModel`).
+* **Multi-Engine DB Support**: Uses SQLite (`sqlite:///./supplysense.db`) for zero-config local execution and switches to PostgreSQL (`postgresql://...`) in containerized/production environments.
+* **Dual Caching Layer (`CacheManager`)**: Connects to Redis for high-throughput response caching, with automatic graceful in-memory TTL dictionary fallback.
+
+### 7. 🐳 Docker & Cloud-Ready Microservice Infrastructure
+* **Containerized FastAPI**: Production `Dockerfile` running Uvicorn server with health check endpoints.
+* **Docker Compose Orchestration**: Multi-container setup orchestrating `web` (FastAPI), `db` (PostgreSQL 15), and `redis` (Redis 7) with volume persistence.
+
 ---
 
 ## 📂 Repository Structure
@@ -98,6 +110,12 @@ SupplySense/
 │   │   ├── Model_pusher.py         # Production model deployment registry
 │   │   ├── inventory_optimizer.py # Stochastic Safety Stock, ROP & PO Engine
 │   │   └── supply_chain_copilot.py# Autonomous NLP Agent & Vendor Drafter
+│   ├── constants/            # Retail Supply Chain Domain Constants
+│   ├── db/                   # Database & Caching Layer
+│   │   ├── models.py              # SQLAlchemy ORM models (Purchase Orders & SKU States)
+│   │   ├── session.py             # Database engine & session management (SQLite / PostgreSQL)
+│   │   ├── repository.py          # CRUD operations for POs and SKU states
+│   │   └── cache.py               # CacheManager (Redis + In-Memory TTL Fallback)
 │   ├── entity/               # Dataclass entities & domain contracts
 │   │   ├── config_entity.py
 │   │   ├── artifact_entity.py
@@ -107,9 +125,12 @@ SupplySense/
 │   └── utils/
 │       └── sku_catalog.py         # Retail SKU catalog & vendor profiles
 ├── test/                     # Pytest suite
-│   └── test_inventory_optimizer.py
+│   ├── test_inventory_optimizer.py
+│   └── test_database_and_cache.py # Database & Cache unit tests
 ├── app.py                    # FastAPI Web Application & REST Server
 ├── main.py                   # Master CLI execution pipeline
+├── Dockerfile                # Production Docker container image definition
+├── docker-compose.yaml       # Multi-container orchestration (FastAPI + Postgres + Redis)
 ├── requirements.txt          # Production dependencies
 └── README.md                 # Product Documentation
 ```
@@ -118,7 +139,14 @@ SupplySense/
 
 ## 🚀 Getting Started & Setup
 
-### 1. Installation
+### Option A: Docker Containerized Launch (Recommended)
+Launch the entire microservice stack (FastAPI + PostgreSQL + Redis Cache) with one command:
+```bash
+docker-compose up --build -d
+```
+Access the application at `http://localhost:8000`.
+
+### Option B: Local Python Installation
 Clone the repository and install Python dependencies:
 ```bash
 git clone https://github.com/abhishekkamble12/SupplySense.git
@@ -130,15 +158,14 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Launch the Application Server
-Start the Uvicorn FastAPI server:
+Start the Uvicorn FastAPI server (uses local SQLite database `sqlite:///./supplysense.db` and in-memory TTL caching automatically):
 ```bash
 python app.py
 # Or with auto-reload enabled:
 uvicorn app.py:app --reload --port 8000
 ```
 
-### 3. Open the Dashboards
+### Open the Dashboards
 * **Executive Cockpit Dashboard**: [`http://localhost:8000/`](http://localhost:8000/)
 * **Interactive Swagger API Documentation**: [`http://localhost:8000/docs`](http://localhost:8000/docs)
 * **System Health API**: [`http://localhost:8000/api/health`](http://localhost:8000/api/health)
@@ -150,12 +177,15 @@ uvicorn app.py:app --reload --port 8000
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/` | Renders the interactive Executive Cockpit Web Interface |
-| `GET` | `/api/v1/inventory/audit` | Runs full portfolio inventory health audit & stockout alarms |
-| `POST` | `/api/v1/inventory/optimize` | Stochastically optimizes single SKU safety stock & ROP |
-| `POST` | `/api/v1/inventory/batch-optimize` | Batch optimizes SKUs and consolidates draft vendor POs |
+| `GET` | `/api/v1/inventory/audit` | Runs full portfolio inventory health audit & stockout alarms (cached) |
+| `POST` | `/api/v1/inventory/optimize` | Stochastically optimizes single SKU safety stock & ROP (persists PO & state to DB) |
+| `POST` | `/api/v1/inventory/batch-optimize` | Batch optimizes SKUs and consolidates draft vendor POs (persists POs to DB) |
 | `POST` | `/api/v1/inventory/simulate` | What-if scenario sandbox for lead time delays & demand surges |
 | `POST` | `/api/v1/inventory/upload-csv` | Ingests custom store inventory CSV files and runs live audit |
 | `POST` | `/api/v1/copilot/chat` | Natural language interaction with AI Supply Chain Copilot |
+| `GET` | `/api/v1/orders` | Retrieves generated purchase orders stored in relational database |
+| `GET` | `/api/v1/orders/{po_id}` | Retrieves details of a specific purchase order by PO ID |
+| `GET` | `/api/v1/cache/stats` | Returns operational metrics for Redis / In-Memory caching layer |
 | `GET` | `/api/v1/mlops/benchmark` | Candidate model evaluation leaderboard (LightGBM vs GBR vs Ridge) |
 | `GET` | `/api/v1/mlops/diagnostics` | Feature importance rankings and model accuracy metrics |
 | `GET` | `/train` | Triggers the master end-to-end ML pipeline |
@@ -167,7 +197,7 @@ uvicorn app.py:app --reload --port 8000
 
 SupplySense logs hyperparameters, validation metrics, feature importances, and model checkpoints to remote tracking:
 
-* **Remote DagsHub Dashboard**: Streams runs to `https://dagshub.com/abhishekkamble12/SupplySense.mlflow`
+* **Remote DagsHub Dashboard**: Streams runs to `https://dagshub.com/kambleabhishek7744/SupplySense.mlflow`
 * **Local MLflow UI**:
   ```bash
   mlflow ui
@@ -178,9 +208,9 @@ SupplySense logs hyperparameters, validation metrics, feature importances, and m
 
 ## 🧪 Testing & Verification
 
-Execute unit tests covering safety stock math, ROP triggers, case pack roundups, and PO consolidation:
+Execute the full pytest suite covering safety stock math, ROP triggers, PO generation, relational database CRUD, and caching operations:
 ```bash
-python -m pytest test/test_inventory_optimizer.py -v
+python -m pytest test/ -v
 ```
 
 ---

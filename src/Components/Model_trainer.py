@@ -134,7 +134,7 @@ class ModelTrainer:
                 import mlflow
                 try:
                     import dagshub
-                    dagshub.init(repo_owner="abhishekkamble12", repo_name="SupplySense", mlflow=True)
+                    dagshub.init(repo_owner="kambleabhishek7744", repo_name="SupplySense", mlflow=True)
                 except Exception as dagshub_err:
                     logging.info(f"DagsHub auto-init skipped: {dagshub_err}")
 

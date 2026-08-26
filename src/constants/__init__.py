@@ -2,18 +2,23 @@ import os
 from datetime import date
 from dotenv import load_dotenv
 load_dotenv()
-# For MongoDB connection
 
-DATABASE_NAME = "Cluster0"
-COLLECTION_NAME = "insurance"
+# Retail Supply Chain Database & Storage Configuration
+DATABASE_NAME = "SupplySenseDB"
+COLLECTION_NAME = "retail_inventory"
 MONGODB_URL_KEY = "MONGODB_URL"
+DATABASE_URL_KEY = "DATABASE_URL"
+DEFAULT_DATABASE_URL = "sqlite:///./supplysense.db"
+REDIS_URL_KEY = "REDIS_URL"
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+CACHE_DEFAULT_TTL = 300
 
-PIPELINE_NAME: str = "insurance_Prediction"
+PIPELINE_NAME: str = "SupplySense_Demand_Forecasting"
 ARTIFACT_DIR: str = "artifact"
 
 MODEL_FILE_NAME = "model.pkl"
 
-TARGET_COLUMN = "Response"
+TARGET_COLUMN = "units_sold"
 CURRENT_YEAR = date.today().year
 PREPROCSSING_OBJECT_FILE_NAME = "preprocessing.pkl"
 
@@ -31,7 +36,7 @@ REGION_NAME = "us-east-1"
 """
 Data Ingestion related constant start with DATA_INGESTION VAR NAME
 """
-DATA_INGESTION_COLLECTION_NAME: str = "Proj1-Data"
+DATA_INGESTION_COLLECTION_NAME: str = "m5_sales_inventory_data"
 DATA_INGESTION_DIR_NAME: str = "data_ingestion"
 DATA_INGESTION_FEATURE_STORE_DIR: str = "feature_store"
 DATA_INGESTION_INGESTED_DIR: str = "ingested"
@@ -69,16 +74,17 @@ MIN_SAMPLES_SPLIT_RANDOM_STATE: int = 101
 MODEL Evaluation related constants
 """
 MODEL_EVALUATION_CHANGED_THRESHOLD_SCORE: float = 0.02
-MODEL_BUCKET_NAME = "my-model-mlopsprojss"
+MODEL_BUCKET_NAME = "supplysense-mlops-models"
 MODEL_PUSHER_S3_KEY = "model-registry"
 
 
 APP_HOST = "0.0.0.0"
-APP_PORT = 5000
+APP_PORT = 8000
+
 
 """
 DAGSHUB MLFLOW CONFIGURATION
 """
-DAGSHUB_REPO_OWNER = "abhishekkamble12"
+DAGSHUB_REPO_OWNER = "kambleabhishek7744"
 DAGSHUB_REPO_NAME = "SupplySense"
 

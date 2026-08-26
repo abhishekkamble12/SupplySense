@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # ----------------- FASTAPI WEB SERVICE -----------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: supplysense_api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://supplysense:supplysense_pass@db:5432/supplysense
+      - REDIS_URL=redis://redis:6379/0
+      - HOST=0.0.0.0
+      - PORT=8000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # ----------------- RELATIONAL DATABASE (POSTGRESQL) -----------------
+  db:
+    image: postgres:15-alpine
+    container_name: supplysense_postgres
+    environment:
+      - POSTGRES_DB=supplysense
+      - POSTGRES_USER=supplysense
+      - POSTGRES_PASSWORD=supplysense_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplysense -d supplysense"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ----------------- CACHING LAYER (REDIS) -----------------
+  redis:
+    image: redis:7-alpine
+    container_name: supplysense_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

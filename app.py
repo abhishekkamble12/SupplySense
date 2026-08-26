@@ -20,12 +20,29 @@ from utils.sku_catalog import get_sku_or_default, get_all_catalog_skus, SAMPLE_C
 from Components.inventory_optimizer import InventoryOptimizer
 from Components.supply_chain_copilot import SupplyChainCopilot
 
+try:
+    from db.session import init_db
+    from db.repository import save_purchase_orders, get_all_purchase_orders, get_purchase_order_by_id, upsert_sku_state
+    from db.cache import cache
+except ImportError:
+    from src.db.session import init_db
+    from src.db.repository import save_purchase_orders, get_all_purchase_orders, get_purchase_order_by_id, upsert_sku_state
+    from src.db.cache import cache
+
 # Initialize FastAPI App
 app = FastAPI(
     title="SupplySense AI",
     description="Autonomous Retail Supply Chain Demand Forecasting & Inventory Optimization Platform",
     version="2.0.0"
 )
+
+# Initialize Relational Database Schema
+try:
+    init_db()
+    logging.info("Relational Database schema initialized successfully.")
+except Exception as err:
+    logging.warning(f"Could not initialize DB schema: {err}")
+
 
 # Enable CORS for frontend integration
 app.add_middleware(
@@ -118,7 +135,9 @@ def health_check():
             "inventory_audit": "/api/v1/inventory/audit",
             "inventory_optimize": "/api/v1/inventory/optimize",
             "inventory_simulate": "/api/v1/inventory/simulate",
-            "catalog_skus": "/api/v1/catalog/skus"
+            "catalog_skus": "/api/v1/catalog/skus",
+            "database_orders": "/api/v1/orders",
+            "cache_stats": "/api/v1/cache/stats"
         }
     }
 
@@ -159,9 +178,13 @@ def predict_sales(request: PredictionRequest):
 
 @app.get("/api/v1/catalog/skus")
 def get_catalog():
-    """Retrieve available sample SKUs with unit economics and supplier profiles"""
+    """Retrieve available sample SKUs with unit economics and supplier profiles (cached)"""
+    cached_catalog = cache.get("sku_catalog")
+    if cached_catalog:
+        return cached_catalog
+
     skus = get_all_catalog_skus()
-    return {
+    response = {
         "status": "success",
         "count": len(skus),
         "data": [
@@ -185,6 +208,8 @@ def get_catalog():
             for s in skus
         ]
     }
+    cache.set("sku_catalog", response, ttl_seconds=300)
+    return response
 
 @app.post("/api/v1/inventory/optimize")
 def optimize_inventory(request: OptimizeSKURequest):
@@ -208,9 +233,30 @@ def optimize_inventory(request: OptimizeSKURequest):
             custom_lead_time_days=request.custom_lead_time_days
         )
         
-        # Also generate PO draft if reorder is needed
+        # Also generate PO draft if reorder is needed and persist to DB
         pos = optimizer.generate_purchase_orders([result])
-        
+        if pos:
+            try:
+                save_purchase_orders(pos)
+                cache.delete("portfolio_audit")
+            except Exception as e:
+                logging.warning(f"Failed to persist PO to database: {e}")
+
+        # Update SKU state in DB
+        try:
+            risk_val = result.risk_level.value if hasattr(result.risk_level, "value") else str(result.risk_level)
+            upsert_sku_state(
+                sku_id=result.sku_id,
+                store_id=result.store_id,
+                on_hand_units=request.on_hand_units,
+                in_transit_units=request.in_transit_units,
+                reorder_point=result.reorder_point,
+                safety_stock=result.safety_stock,
+                risk_level=risk_val
+            )
+        except Exception as e:
+            logging.warning(f"Failed to update SKU state in DB: {e}")
+
         return {
             "status": "success",
             "optimization": result.__dict__,
@@ -242,7 +288,13 @@ def batch_optimize_inventory(request: BatchOptimizeRequest):
             results.append(res)
             
         pos = optimizer.generate_purchase_orders(results)
-        
+        if pos:
+            try:
+                save_purchase_orders(pos)
+                cache.delete("portfolio_audit")
+            except Exception as e:
+                logging.warning(f"Failed to persist batch POs to database: {e}")
+
         return {
             "status": "success",
             "total_items": len(results),
@@ -257,11 +309,22 @@ def batch_optimize_inventory(request: BatchOptimizeRequest):
 def audit_inventory():
     """
     Performs full store inventory audit across all catalog SKUs.
-    Returns stockout risk radar, working capital exposure, and auto-generated POs.
+    Returns stockout risk radar, working capital exposure, and auto-generated POs (cached).
     """
     try:
+        cached_audit = cache.get("portfolio_audit")
+        if cached_audit:
+            return cached_audit
+
         audit_report = optimizer.run_portfolio_audit()
-        return {
+
+        if audit_report.generated_pos:
+            try:
+                save_purchase_orders(audit_report.generated_pos)
+            except Exception as e:
+                logging.warning(f"Failed to persist audit POs to database: {e}")
+
+        response = {
             "status": "success",
             "summary": {
                 "total_skus_evaluated": audit_report.total_skus_evaluated,
@@ -276,6 +339,9 @@ def audit_inventory():
             "high_priority_actions": [a.__dict__ for a in audit_report.high_priority_actions],
             "generated_purchase_orders": [po.__dict__ for po in audit_report.generated_pos]
         }
+
+        cache.set("portfolio_audit", response, ttl_seconds=60)
+        return response
     except Exception as e:
         logging.error(f"Inventory audit failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -382,6 +448,13 @@ async def upload_inventory_csv(file: UploadFile = File(...)):
             })
 
         audit_report = optimizer.run_portfolio_audit(sku_states=sku_states)
+        if audit_report.generated_pos:
+            try:
+                save_purchase_orders(audit_report.generated_pos)
+                cache.delete("portfolio_audit")
+            except Exception as e:
+                logging.warning(f"Failed to persist CSV upload POs to DB: {e}")
+
         return {
             "status": "success",
             "filename": file.filename,
@@ -420,7 +493,7 @@ def get_mlops_diagnostics():
         },
         "experiment_tracking": {
             "mlflow_experiment": "SupplySense_Sales_Forecasting",
-            "dagshub_remote": "https://dagshub.com/abhishekkamble12/SupplySense.mlflow",
+            "dagshub_remote": "https://dagshub.com/kambleabhishek7744/SupplySense.mlflow",
             "feature_store": "Datasets/sales_train_evaluation.csv",
             "pipeline_stages": [
                 "Data Ingestion & Memory Downcasting (Int16/Float32)",
@@ -468,5 +541,45 @@ def get_mlops_benchmark():
         }
     }
 
+@app.get("/api/v1/orders")
+def list_purchase_orders(limit: int = 100):
+    """Retrieve historical generated purchase orders stored in relational database."""
+    try:
+        orders = get_all_purchase_orders(limit=limit)
+        return {
+            "status": "success",
+            "count": len(orders),
+            "orders": orders
+        }
+    except Exception as e:
+        logging.error(f"Failed to fetch purchase orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/orders/{po_id}")
+def get_purchase_order(po_id: str):
+    """Retrieve details of a specific purchase order by PO ID."""
+    try:
+        order = get_purchase_order_by_id(po_id)
+        if not order:
+            raise HTTPException(status_code=404, detail=f"Purchase Order '{po_id}' not found.")
+        return {
+            "status": "success",
+            "order": order
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to fetch purchase order {po_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/cache/stats")
+def get_cache_stats():
+    """Get operational statistics and status of Redis/In-Memory Caching Layer."""
+    return {
+        "status": "success",
+        "cache": cache.stats()
+    }
+
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+

@@ -1,0 +1,25 @@
+name: supplysense
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - mlflow
+    - scikit-learn
+    - numpy
+    - pandas
+    - matplotlib
+    - dagshub
+    - fastapi
+    - uvicorn
+    - pydantic
+    - lightgbm
+    - pyarrow
+    - pytest
+    - python-multipart
+    - sqlalchemy
+    - redis
+    - psycopg2-binary
+    - flake8

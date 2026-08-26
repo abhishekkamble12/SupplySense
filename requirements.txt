@@ -9,3 +9,8 @@ uvicorn
 pydantic
 lightgbm
 pyarrow
+pytest
+python-multipart
+sqlalchemy
+redis
+psycopg2-binary

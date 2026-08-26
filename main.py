@@ -1,8 +1,15 @@
+import os
 import sys
+
+# Ensure src directory is in sys.path
+sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
+
 from logger.logger import logging
 from exception.exception import CustomException
 from pipeline.training_pipeline import TrainingPipeline
+
 STAGE_NAME = "Full Training Pipeline Execution"
+
 if __name__ == "__main__":
     try:
         logging.info(f">>>>>> Stage {STAGE_NAME} started <<<<<<")
